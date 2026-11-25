@@ -449,8 +449,8 @@ var _Sources = (() => {
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.urlEncodeObject = exports.convertTime = exports.Source = void 0;
       var Source2 = class {
-        constructor(cheerio2) {
-          this.cheerio = cheerio2;
+        constructor(cheerio) {
+          this.cheerio = cheerio;
         }
         /**
          * @deprecated use {@link Source.getSearchResults getSearchResults} instead
@@ -509,14 +509,14 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.BadgeColor = void 0;
-      var BadgeColor;
-      (function(BadgeColor2) {
-        BadgeColor2["BLUE"] = "default";
-        BadgeColor2["GREEN"] = "success";
-        BadgeColor2["GREY"] = "info";
-        BadgeColor2["YELLOW"] = "warning";
-        BadgeColor2["RED"] = "danger";
-      })(BadgeColor = exports.BadgeColor || (exports.BadgeColor = {}));
+      var BadgeColor2;
+      (function(BadgeColor3) {
+        BadgeColor3["BLUE"] = "default";
+        BadgeColor3["GREEN"] = "success";
+        BadgeColor3["GREY"] = "info";
+        BadgeColor3["YELLOW"] = "warning";
+        BadgeColor3["RED"] = "danger";
+      })(BadgeColor2 = exports.BadgeColor || (exports.BadgeColor = {}));
     }
   });
 
@@ -613,15 +613,15 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.ContentRating = exports.SourceIntents = void 0;
-      var SourceIntents;
-      (function(SourceIntents2) {
-        SourceIntents2[SourceIntents2["MANGA_CHAPTERS"] = 1] = "MANGA_CHAPTERS";
-        SourceIntents2[SourceIntents2["MANGA_TRACKING"] = 2] = "MANGA_TRACKING";
-        SourceIntents2[SourceIntents2["HOMEPAGE_SECTIONS"] = 4] = "HOMEPAGE_SECTIONS";
-        SourceIntents2[SourceIntents2["COLLECTION_MANAGEMENT"] = 8] = "COLLECTION_MANAGEMENT";
-        SourceIntents2[SourceIntents2["CLOUDFLARE_BYPASS_REQUIRED"] = 16] = "CLOUDFLARE_BYPASS_REQUIRED";
-        SourceIntents2[SourceIntents2["SETTINGS_UI"] = 32] = "SETTINGS_UI";
-      })(SourceIntents = exports.SourceIntents || (exports.SourceIntents = {}));
+      var SourceIntents2;
+      (function(SourceIntents3) {
+        SourceIntents3[SourceIntents3["MANGA_CHAPTERS"] = 1] = "MANGA_CHAPTERS";
+        SourceIntents3[SourceIntents3["MANGA_TRACKING"] = 2] = "MANGA_TRACKING";
+        SourceIntents3[SourceIntents3["HOMEPAGE_SECTIONS"] = 4] = "HOMEPAGE_SECTIONS";
+        SourceIntents3[SourceIntents3["COLLECTION_MANAGEMENT"] = 8] = "COLLECTION_MANAGEMENT";
+        SourceIntents3[SourceIntents3["CLOUDFLARE_BYPASS_REQUIRED"] = 16] = "CLOUDFLARE_BYPASS_REQUIRED";
+        SourceIntents3[SourceIntents3["SETTINGS_UI"] = 32] = "SETTINGS_UI";
+      })(SourceIntents2 = exports.SourceIntents || (exports.SourceIntents = {}));
       var ContentRating2;
       (function(ContentRating3) {
         ContentRating3["EVERYONE"] = "EVERYONE";
@@ -728,38 +728,40 @@ var _Sources = (() => {
     GlobalComixInfo: () => GlobalComixInfo
   });
   var import_types = __toESM(require_lib());
-  var GLOBALCOMIX_DOMAIN = "https://globalcomix.com";
+  var GC_DOMAIN = "https://globalcomix.com";
   var GlobalComixInfo = {
     version: "1.0.0",
     name: "GlobalComix",
     icon: "icon.png",
     author: "Custom",
-    authorWebsite: "https://github.com",
-    description: "Extension for reading comics on GlobalComix",
+    authorWebsite: "https://github.com/laizywaizy",
+    description: "Extension that pulls comics from globalcomix.com",
     contentRating: import_types.ContentRating.EVERYONE,
-    websiteBaseURL: GLOBALCOMIX_DOMAIN,
+    websiteBaseURL: GC_DOMAIN,
     sourceTags: [
       {
         text: "English",
-        type: "language"
+        type: import_types.BadgeColor.BLUE
       },
       {
         text: "Comics",
-        type: "genre"
+        type: import_types.BadgeColor.GREEN
       }
-    ]
+    ],
+    intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS
   };
-  var GlobalComix = class {
+  var GlobalComix = class extends import_types.Source {
     constructor() {
-      this.requestManager = createRequestManager({
-        requestsPerSecond: 5,
+      super(...arguments);
+      this.requestManager = App.createRequestManager({
+        requestsPerSecond: 4,
         requestTimeout: 15e3,
         interceptor: {
           interceptRequest: async (request) => {
             request.headers = {
               ...request.headers ?? {},
-              "user-agent": await this.requestManager.getDefaultUserAgent(),
-              "referer": `${GLOBALCOMIX_DOMAIN}/`
+              "referer": `${GC_DOMAIN}/`,
+              "user-agent": await this.requestManager.getDefaultUserAgent()
             };
             return request;
           },
@@ -769,132 +771,147 @@ var _Sources = (() => {
         }
       });
     }
+    getMangaShareUrl(mangaId) {
+      return `${GC_DOMAIN}/c/${mangaId}`;
+    }
     async getMangaDetails(mangaId) {
-      const request = createRequestObject({
-        url: `${GLOBALCOMIX_DOMAIN}/c/${mangaId}`,
+      const request = App.createRequest({
+        url: `${GC_DOMAIN}/c/${mangaId}`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const $ = cheerio.load(response.data);
-      const title = $("h1").first().text().trim();
-      const image = $(".book-cover img").attr("src") ?? "";
-      const description = $(".book-description").text().trim();
-      let author = "";
-      $(".book-creator a").each((_, elem) => {
-        author = $(elem).text().trim();
+      const $ = this.cheerio.load(response.data);
+      const title = $("h1").first().text().trim() || mangaId;
+      const image = $('meta[property="og:image"]').attr("content") ?? "";
+      const desc = $('meta[property="og:description"]').attr("content")?.trim() ?? "";
+      const author = $('a[href*="/a/"]').first().text().trim() || "Unknown";
+      const tags = [];
+      $('a[href*="/genres/"], a[href*="/tags/"]').each((_, el) => {
+        const label = $(el).text().trim();
+        const href = $(el).attr("href") ?? "";
+        const id = href.split("/").filter(Boolean).pop() ?? label.toLowerCase();
+        if (label && !tags.some((t) => t.id === id)) {
+          tags.push(App.createTag({ id, label }));
+        }
       });
-      return createSourceManga({
+      const tagSections = tags.length > 0 ? [App.createTagSection({ id: "0", label: "Genres", tags })] : [];
+      return App.createManga({
         id: mangaId,
-        manga: createManga({
-          id: mangaId,
-          titles: [title],
-          image,
-          author,
-          artist: author,
-          desc: description,
-          status: "Ongoing"
-        })
+        titles: [title],
+        image,
+        status: 1,
+        author,
+        artist: author,
+        desc,
+        tags: tagSections
       });
     }
     async getChapters(mangaId) {
-      const request = createRequestObject({
-        url: `${GLOBALCOMIX_DOMAIN}/c/${mangaId}`,
+      const request = App.createRequest({
+        url: `${GC_DOMAIN}/c/${mangaId}`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const $ = cheerio.load(response.data);
+      const $ = this.cheerio.load(response.data);
       const chapters = [];
-      let index = 0;
-      $(".chapter-row, .episode-item").each((_, elem) => {
-        const title = $(elem).find(".chapter-title").text().trim() || `Chapter ${index + 1}`;
-        const chapterId = $(elem).find("a").attr("href") ?? "";
-        chapters.push(createChapter({
-          id: chapterId,
-          mangaId,
-          name: title,
-          chapNum: index + 1,
-          langCode: "en",
-          sortingIndex: index
-        }));
-        index++;
+      const seen = /* @__PURE__ */ new Set();
+      $(`a[href*="/c/${mangaId}/chapters/"]`).each((index, el) => {
+        const href = $(el).attr("href") ?? "";
+        const match = href.match(/\/chapters\/([^/?#]+)/);
+        if (!match) return;
+        const chapterId = match[1];
+        if (seen.has(chapterId)) return;
+        seen.add(chapterId);
+        const rawName = $(el).text().trim() || `Chapter ${index + 1}`;
+        const numMatch = rawName.match(/(\d+(?:\.\d+)?)/);
+        const chapNum = numMatch ? parseFloat(numMatch[1]) : index + 1;
+        chapters.push(
+          App.createChapter({
+            id: chapterId,
+            name: rawName,
+            chapNum,
+            langCode: "\u{1F1EC}\u{1F1E7}"
+          })
+        );
       });
       return chapters;
     }
     async getChapterDetails(mangaId, chapterId) {
-      const request = createRequestObject({
-        url: `${GLOBALCOMIX_DOMAIN}${chapterId}`,
+      const request = App.createRequest({
+        url: `${GC_DOMAIN}/c/${mangaId}/chapters/${chapterId}`,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const $ = cheerio.load(response.data);
+      const html = response.data;
+      const $ = this.cheerio.load(html);
       const pages = [];
-      $(".reader-image, .page-image img").each((_, elem) => {
-        const pageUrl = $(elem).attr("data-src") || $(elem).attr("src");
-        if (pageUrl) {
-          pages.push(pageUrl.trim());
+      $("img").each((_, el) => {
+        const src = $(el).attr("data-src") || $(el).attr("src") || "";
+        if (src && (src.includes("/pages/") || src.includes("cdn.globalcomix.com")) && !pages.includes(src)) {
+          pages.push(src.startsWith("http") ? src : `https:${src}`);
         }
       });
-      return createChapterDetails({
+      return App.createChapterDetails({
         id: chapterId,
         mangaId,
         pages
       });
     }
-    async getHomePageSections(sectionCallback) {
-      const sections = [
-        createHomeSection({ id: "featured", name: "Featured Comics", displayed: true }),
-        createHomeSection({ id: "popular", name: "Popular Comics", displayed: true })
-      ];
-      for (const section of sections) {
-        sectionCallback(section);
-        const request = createRequestObject({
-          url: `${GLOBALCOMIX_DOMAIN}/discover`,
-          method: "GET"
-        });
-        const response = await this.requestManager.schedule(request, 1);
-        const $ = cheerio.load(response.data);
-        const items = [];
-        $(".comic-card, .book-item").each((_, elem) => {
-          const title = $(elem).find(".title, h3").text().trim();
-          const id = $(elem).find("a").attr("href")?.replace("/c/", "") ?? "";
-          const image = $(elem).find("img").attr("src") ?? "";
-          if (id && title) {
-            items.push(createManga({
-              id,
-              titles: [title],
-              image
-            }));
-          }
-        });
-        section.items = items;
-        sectionCallback(section);
-      }
-    }
     async getSearchResults(query, metadata) {
-      const searchUrl = `${GLOBALCOMIX_DOMAIN}/search?query=${encodeURIComponent(query.title ?? "")}`;
-      const request = createRequestObject({
-        url: searchUrl,
+      const page = metadata?.page ?? 1;
+      const searchTerm = encodeURIComponent(query.title ?? "");
+      const url = searchTerm ? `${GC_DOMAIN}/search?q=${searchTerm}&page=${page}` : `${GC_DOMAIN}/browse?page=${page}`;
+      const request = App.createRequest({
+        url,
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const $ = cheerio.load(response.data);
-      const results = [];
-      $(".search-result-item, .comic-card").each((_, elem) => {
-        const title = $(elem).find(".title").text().trim();
-        const id = $(elem).find("a").attr("href")?.replace("/c/", "") ?? "";
-        const image = $(elem).find("img").attr("src") ?? "";
-        if (id && title) {
-          results.push(createManga({
-            id,
-            titles: [title],
-            image
-          }));
+      const $ = this.cheerio.load(response.data);
+      const tiles = [];
+      const seen = /* @__PURE__ */ new Set();
+      $('a[href*="/c/"]').each((_, el) => {
+        const href = $(el).attr("href") ?? "";
+        const match = href.match(/\/c\/([^/?#]+)$/);
+        if (!match) return;
+        const id = match[1];
+        if (seen.has(id)) return;
+        seen.add(id);
+        const img = $(el).find("img").first();
+        const title = img.attr("alt")?.trim() || $(el).text().trim() || id;
+        const image = img.attr("data-src") || img.attr("src") || "";
+        if (title) {
+          tiles.push(
+            App.createPartialSourceManga({
+              mangaId: id,
+              title,
+              image: image.startsWith("http") || !image ? image : `${GC_DOMAIN}${image}`
+            })
+          );
         }
       });
-      return createPagedResults({
-        results,
-        metadata: void 0
+      return App.createPagedResults({
+        results: tiles,
+        metadata: tiles.length > 0 ? { page: page + 1 } : void 0
       });
+    }
+    async getHomePageSections(sectionCallback) {
+      const popularSection = App.createHomeSection({
+        id: "popular",
+        title: "Popular Comics",
+        containsMoreItems: true,
+        type: "singleRowNormal"
+      });
+      sectionCallback(popularSection);
+      const results = await this.getSearchResults({ title: "" }, { page: 1 });
+      popularSection.items = results.results;
+      sectionCallback(popularSection);
+    }
+    async filterUpdatedManga(mangaUpdatesFoundCallback, time, ids) {
+      mangaUpdatesFoundCallback(
+        App.createMangaUpdates({
+          ids: []
+        })
+      );
     }
   };
   return __toCommonJS(GlobalComix_exports);
