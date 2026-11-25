@@ -1,16 +1,22 @@
 import {
-    Source,
-    Manga,
+    BadgeColor,
     Chapter,
     ChapterDetails,
-    HomeSection,
-    SearchRequest,
-    PagedResults,
-    SourceInfo,
+    ChapterProviding,
     ContentRating,
-    BadgeColor,
+    HomePageSectionsProviding,
+    HomeSection,
+    HomeSectionType,
+    MangaProviding,
+    PagedResults,
+    PartialSourceManga,
+    Request,
+    Response,
+    SearchRequest,
+    SearchResultsProviding,
+    SourceInfo,
     SourceIntents,
-    MangaUpdates,
+    SourceManga,
     Tag,
     TagSection
 } from '@paperback/types'
@@ -22,7 +28,7 @@ export const GlobalComixInfo: SourceInfo = {
     name: 'GlobalComix',
     icon: 'icon.png',
     author: 'Custom',
-    authorWebsite: 'https://github.com/laizywaizy',
+    authorWebsite: 'https://github.com/LaizyWaizy',
     description: 'Extension that pulls comics from globalcomix.com',
     contentRating: ContentRating.EVERYONE,
     websiteBaseURL: GC_DOMAIN,
@@ -30,21 +36,19 @@ export const GlobalComixInfo: SourceInfo = {
         {
             text: 'English',
             type: BadgeColor.BLUE
-        },
-        {
-            text: 'Comics',
-            type: BadgeColor.GREEN
         }
     ],
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS
 }
 
-export class GlobalComix extends Source {
+export class GlobalComix implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
+    constructor(private cheerio: CheerioAPI) {}
+
     requestManager = App.createRequestManager({
         requestsPerSecond: 4,
         requestTimeout: 15000,
         interceptor: {
-            interceptRequest: async (request) => {
+            interceptRequest: async (request: Request): Promise<Request> => {
                 request.headers = {
                     ...(request.headers ?? {}),
                     'referer': `${GC_DOMAIN}/`,
@@ -52,17 +56,17 @@ export class GlobalComix extends Source {
                 }
                 return request
             },
-            interceptResponse: async (response) => {
+            interceptResponse: async (response: Response): Promise<Response> => {
                 return response
             }
         }
     })
 
-    override getMangaShareUrl(mangaId: string): string {
+    getMangaShareUrl(mangaId: string): string {
         return `${GC_DOMAIN}/c/${mangaId}`
     }
 
-    override async getMangaDetails(mangaId: string): Promise<Manga> {
+    async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const request = App.createRequest({
             url: `${GC_DOMAIN}/c/${mangaId}`,
             method: 'GET'
@@ -89,19 +93,21 @@ export class GlobalComix extends Source {
             ? [App.createTagSection({ id: '0', label: 'Genres', tags })]
             : []
 
-        return App.createManga({
+        return App.createSourceManga({
             id: mangaId,
-            titles: [title],
-            image,
-            status: 1,
-            author,
-            artist: author,
-            desc,
-            tags: tagSections
+            mangaInfo: App.createMangaInfo({
+                titles: [title],
+                image,
+                status: 'Ongoing',
+                author,
+                artist: author,
+                desc,
+                tags: tagSections
+            })
         })
     }
 
-    override async getChapters(mangaId: string): Promise<Chapter[]> {
+    async getChapters(mangaId: string): Promise<Chapter[]> {
         const request = App.createRequest({
             url: `${GC_DOMAIN}/c/${mangaId}`,
             method: 'GET'
@@ -138,14 +144,13 @@ export class GlobalComix extends Source {
         return chapters
     }
 
-    override async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
+    async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         const request = App.createRequest({
             url: `${GC_DOMAIN}/c/${mangaId}/chapters/${chapterId}`,
             method: 'GET'
         })
         const response = await this.requestManager.schedule(request, 1)
-        const html = response.data as string
-        const $ = this.cheerio.load(html)
+        const $ = this.cheerio.load(response.data as string)
 
         const pages: string[] = []
         $('img').each((_, el) => {
@@ -162,7 +167,7 @@ export class GlobalComix extends Source {
         })
     }
 
-    override async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
+    async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page: number = metadata?.page ?? 1
         const searchTerm = encodeURIComponent(query.title ?? '')
         const url = searchTerm
@@ -176,7 +181,7 @@ export class GlobalComix extends Source {
         const response = await this.requestManager.schedule(request, 1)
         const $ = this.cheerio.load(response.data as string)
 
-        const tiles = []
+        const tiles: PartialSourceManga[] = []
         const seen = new Set<string>()
 
         $('a[href*="/c/"]').each((_, el) => {
@@ -209,29 +214,17 @@ export class GlobalComix extends Source {
         })
     }
 
-    override async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
+    async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
         const popularSection = App.createHomeSection({
             id: 'popular',
             title: 'Popular Comics',
             containsMoreItems: true,
-            type: 'singleRowNormal'
+            type: HomeSectionType.singleRowNormal
         })
         sectionCallback(popularSection)
 
         const results = await this.getSearchResults({ title: '' }, { page: 1 })
         popularSection.items = results.results
         sectionCallback(popularSection)
-    }
-
-    override async filterUpdatedManga(
-        mangaUpdatesFoundCallback: (updates: MangaUpdates) => void,
-        time: Date,
-        ids: string[]
-    ): Promise<void> {
-        mangaUpdatesFoundCallback(
-            App.createMangaUpdates({
-                ids: []
-            })
-        )
     }
 }
