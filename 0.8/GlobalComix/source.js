@@ -448,7 +448,7 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.urlEncodeObject = exports.convertTime = exports.Source = void 0;
-      var Source2 = class {
+      var Source = class {
         constructor(cheerio) {
           this.cheerio = cheerio;
         }
@@ -465,7 +465,7 @@ var _Sources = (() => {
           return this.getSearchTags?.();
         }
       };
-      exports.Source = Source2;
+      exports.Source = Source;
       function convertTime(timeAgo) {
         let time;
         let trimmed = Number((/\d*/.exec(timeAgo) ?? [])[0]);
@@ -637,13 +637,13 @@ var _Sources = (() => {
       "use strict";
       Object.defineProperty(exports, "__esModule", { value: true });
       exports.HomeSectionType = void 0;
-      var HomeSectionType;
-      (function(HomeSectionType2) {
-        HomeSectionType2["singleRowNormal"] = "singleRowNormal";
-        HomeSectionType2["singleRowLarge"] = "singleRowLarge";
-        HomeSectionType2["doubleRow"] = "doubleRow";
-        HomeSectionType2["featured"] = "featured";
-      })(HomeSectionType = exports.HomeSectionType || (exports.HomeSectionType = {}));
+      var HomeSectionType2;
+      (function(HomeSectionType3) {
+        HomeSectionType3["singleRowNormal"] = "singleRowNormal";
+        HomeSectionType3["singleRowLarge"] = "singleRowLarge";
+        HomeSectionType3["doubleRow"] = "doubleRow";
+        HomeSectionType3["featured"] = "featured";
+      })(HomeSectionType2 = exports.HomeSectionType || (exports.HomeSectionType = {}));
     }
   });
 
@@ -734,7 +734,7 @@ var _Sources = (() => {
     name: "GlobalComix",
     icon: "icon.png",
     author: "Custom",
-    authorWebsite: "https://github.com/laizywaizy",
+    authorWebsite: "https://github.com/LaizyWaizy",
     description: "Extension that pulls comics from globalcomix.com",
     contentRating: import_types.ContentRating.EVERYONE,
     websiteBaseURL: GC_DOMAIN,
@@ -742,17 +742,13 @@ var _Sources = (() => {
       {
         text: "English",
         type: import_types.BadgeColor.BLUE
-      },
-      {
-        text: "Comics",
-        type: import_types.BadgeColor.GREEN
       }
     ],
     intents: import_types.SourceIntents.MANGA_CHAPTERS | import_types.SourceIntents.HOMEPAGE_SECTIONS
   };
-  var GlobalComix = class extends import_types.Source {
-    constructor() {
-      super(...arguments);
+  var GlobalComix = class {
+    constructor(cheerio) {
+      this.cheerio = cheerio;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 4,
         requestTimeout: 15e3,
@@ -795,15 +791,17 @@ var _Sources = (() => {
         }
       });
       const tagSections = tags.length > 0 ? [App.createTagSection({ id: "0", label: "Genres", tags })] : [];
-      return App.createManga({
+      return App.createSourceManga({
         id: mangaId,
-        titles: [title],
-        image,
-        status: 1,
-        author,
-        artist: author,
-        desc,
-        tags: tagSections
+        mangaInfo: App.createMangaInfo({
+          titles: [title],
+          image,
+          status: "Ongoing",
+          author,
+          artist: author,
+          desc,
+          tags: tagSections
+        })
       });
     }
     async getChapters(mangaId) {
@@ -842,8 +840,7 @@ var _Sources = (() => {
         method: "GET"
       });
       const response = await this.requestManager.schedule(request, 1);
-      const html = response.data;
-      const $ = this.cheerio.load(html);
+      const $ = this.cheerio.load(response.data);
       const pages = [];
       $("img").each((_, el) => {
         const src = $(el).attr("data-src") || $(el).attr("src") || "";
@@ -899,19 +896,12 @@ var _Sources = (() => {
         id: "popular",
         title: "Popular Comics",
         containsMoreItems: true,
-        type: "singleRowNormal"
+        type: import_types.HomeSectionType.singleRowNormal
       });
       sectionCallback(popularSection);
       const results = await this.getSearchResults({ title: "" }, { page: 1 });
       popularSection.items = results.results;
       sectionCallback(popularSection);
-    }
-    async filterUpdatedManga(mangaUpdatesFoundCallback, time, ids) {
-      mangaUpdatesFoundCallback(
-        App.createMangaUpdates({
-          ids: []
-        })
-      );
     }
   };
   return __toCommonJS(GlobalComix_exports);
